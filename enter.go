@@ -3,6 +3,7 @@ package goimgp
 import (
 	"errors"
 	"github.com/davidbyttow/govips/v2/vips"
+	"runtime"
 )
 
 const (
@@ -15,6 +16,57 @@ const (
 type Encoder struct {
 	img     *vips.ImageRef
 	ImgType int
+}
+
+var (
+	boolFalse   vips.BoolParameter
+	intMinusOne vips.IntParameter
+)
+
+var (
+	ErrorSupportImage = errors.New("不支持的图片格式")
+)
+
+func init() {
+	vips.Startup(&vips.Config{
+		ConcurrencyLevel: runtime.NumCPU(),
+	})
+
+	boolFalse.Set(false)
+	intMinusOne.Set(-1)
+}
+
+// ShowDown 关闭libvips
+func ShowDown() {
+	vips.Shutdown()
+}
+
+func LoadImgFromBuffer(buffer []byte) (*Encoder, error) {
+	encode := new(Encoder)
+	img, err := vips.LoadImageFromBuffer(buffer, &vips.ImportParams{
+		FailOnError: boolFalse,
+		NumPages:    intMinusOne,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	switch img.Format() {
+	case vips.ImageTypeWEBP:
+		encode.ImgType = ImgTypeWEBP
+	case vips.ImageTypeGIF:
+		encode.ImgType = ImgTypeGIF
+	case vips.ImageTypeJPEG:
+		encode.ImgType = ImgTypeJPEG
+	case vips.ImageTypePNG:
+		encode.ImgType = ImgTypePng
+	default:
+		return nil, ErrorSupportImage
+	}
+
+	encode.img = img
+
+	return encode, nil
 }
 
 // ToPng 转为png格式并压缩
