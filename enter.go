@@ -165,7 +165,7 @@ func (that Encoder) ToWebp() ([]byte, error) {
 	return resultBuf, nil
 }
 
-// Compress 压缩图片保证质量
+// Compress 压缩图片尽可能保证质量
 func (that Encoder) Compress() ([]byte, error) {
 	switch that.ImgType {
 	case ImgTypeJPEG:
@@ -181,8 +181,19 @@ func (that Encoder) Compress() ([]byte, error) {
 	}
 }
 
-// Tiny 压缩并限制长宽，大幅下降质量，尽可能地减小体积
-func (that Encoder) Tiny(maxW, maxH int) (buf []byte, err error) {
+// Tiny 压缩并限制长宽，默认质量为35，你也可以自行设置
+func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error) {
+	q := 35
+	if len(quality) > 0 {
+		q = quality[0]
+		if q <= 0 {
+			q = 35
+		}
+
+		if q > 99 {
+			q = 100
+		}
+	}
 	err = thumbNail(that.img, maxW, maxH)
 	if err != nil {
 		return nil, err
@@ -191,7 +202,7 @@ func (that Encoder) Tiny(maxW, maxH int) (buf []byte, err error) {
 	case ImgTypeJPEG:
 		buf, _, err = that.img.ExportJpeg(&vips.JpegExportParams{
 			StripMetadata:  true,
-			Quality:        35,
+			Quality:        q,
 			Interlace:      true,
 			OptimizeCoding: true,
 			// SubsampleMode:      0,
@@ -206,7 +217,7 @@ func (that Encoder) Tiny(maxW, maxH int) (buf []byte, err error) {
 			Compression:   9, // 压缩等级 0 - 9
 			Filter:        vips.PngFilterNone,
 			Interlace:     false, // 交错, 会增大体积，但是浏览器体验好
-			Quality:       35,    // 优化程度，仅在palette开启时有效
+			Quality:       q,     // 优化程度，仅在palette开启时有效
 			Palette:       true,  // 调色板模式, 有效减小体积
 			// Dither:      0,
 			Bitdepth: 8, // 色深
@@ -215,18 +226,26 @@ func (that Encoder) Tiny(maxW, maxH int) (buf []byte, err error) {
 	case ImgTypeGIF:
 		buf, _, err = that.img.ExportGIF(&vips.GifExportParams{
 			StripMetadata: true,
-			Quality:       35,
+			Quality:       q,
 			// Dither:        0,
 			Effort:   7,
 			Bitdepth: 8,
 		})
 	case ImgTypeWEBP:
-		buf, _, err = that.img.ExportWebp(&vips.WebpExportParams{
-			Quality:         35,
-			Lossless:        false,
-			StripMetadata:   true,
-			ReductionEffort: 4,
-		})
+		if q == 100 {
+			buf, _, err = that.img.ExportWebp(&vips.WebpExportParams{
+				Lossless:      true,
+				StripMetadata: true,
+			})
+		} else {
+			buf, _, err = that.img.ExportWebp(&vips.WebpExportParams{
+				Quality:         q,
+				Lossless:        false,
+				StripMetadata:   true,
+				ReductionEffort: 4,
+			})
+		}
+
 	default:
 		return nil, errors.New("不支持的图片格式")
 	}
