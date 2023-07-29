@@ -1,0 +1,1 @@
+Goimgp is a faster image processing library for GO
