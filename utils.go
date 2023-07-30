@@ -1,42 +1,85 @@
 package goimgp
 
 import (
+	"errors"
 	"github.com/davidbyttow/govips/v2/vips"
-	"math"
 )
 
 // 图片大小缩小
-func thumbNail(img *vips.ImageRef, desW, desH int) error {
+func thumbNail(img *vips.ImageRef, desW, desH int) (buf []byte, err error) {
 	var (
-		srcW = float64(img.Width())
-		srcH = float64(img.PageHeight())
+		srcW = img.Width()
+		srcH = img.PageHeight()
 	)
 
-	// 不缩放
-	if img.Width() <= desW && img.PageHeight() <= desH {
-		return nil
+	if desW > srcW && desH > srcH {
+		buf, _, err = img.ExportNative()
+
+		return
 	}
 
-	// 宽高比
-	ratio := srcW / srcH
+	ratio := float64(srcH) / float64(srcW)
 
 	if desW > 0 && desH <= 0 {
-		return img.Thumbnail(desW, int(srcH/ratio), 0)
+		err = img.ThumbnailWithSize(desW, int(float64(desW)*ratio), 0, vips.SizeDown)
+	} else if desW <= 0 && desH > 0 {
+		err = img.ThumbnailWithSize(int(float64(desH)/ratio), desH, 0, vips.SizeDown)
+	} else if desW > 0 && desH > 0 {
+		err = img.ThumbnailWithSize(desW, desH, 0, vips.SizeDown)
 	}
 
-	if desW <= 0 && desH > 0 {
-		return img.Thumbnail(int(float64(desH)*ratio), desH*img.Pages(), 0)
+	buf, _, err = img.ExportNative()
+
+	return
+}
+
+// resize
+func resizeImg(img *vips.ImageRef, desW int, desH ...int) ([]byte, error) {
+	var (
+		w   = desW
+		h   = 0
+		err error
+		buf []byte
+	)
+
+	if w < 0 {
+		w = 0
 	}
 
-	// 自适应计算，确保宽高满足条件
-	if desW > 0 && desH > 0 {
-		thumbRatio := math.Min(float64(desW)/srcW, float64(desH)/srcH)
+	if len(desH) > 0 {
+		h = desH[0]
 
-		h := int(math.Ceil(srcH * thumbRatio))
-		w := int(float64(h) * ratio)
-
-		return img.Thumbnail(w, h*img.Pages(), 0)
+		if h < 0 {
+			h = 0
+		}
 	}
 
-	return nil
+	if w == 0 && h == 0 {
+		return nil, errors.New("宽高数据输入不合法")
+	}
+
+	ratio := float64(img.PageHeight()) / float64(img.Width())
+	if w == 0 {
+		// ratio := float64(h) / float64(img.PageHeight())
+		// err = img.Resize(ratio, -1)
+
+		err = img.ThumbnailWithSize(int(float64(h)/ratio), h, 0, vips.SizeForce)
+		if err != nil {
+			return nil, err
+		}
+	} else if h == 0 {
+		err = img.ThumbnailWithSize(w, int(float64(w)*ratio), 0, vips.SizeForce)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = img.ThumbnailWithSize(w, h, 0, vips.SizeForce)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	buf, _, err = img.ExportNative()
+
+	return buf, err
 }

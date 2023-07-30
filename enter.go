@@ -1,3 +1,4 @@
+// Package goimgp 对govips简单封装，提供一些好的方法实现图片压缩和转换
 package goimgp
 
 import (
@@ -7,15 +8,18 @@ import (
 )
 
 const (
-	ImgTypeJPEG = 1
-	ImgTypePng  = 2
-	ImgTypeGIF  = 3
-	ImgTypeWEBP = 4
+	ImgTypeJPEG ImgType = 1
+	ImgTypePng  ImgType = 2
+	ImgTypeGIF  ImgType = 3
+	ImgTypeWEBP ImgType = 4
 )
 
+type ImgType int
+
 type Encoder struct {
-	img     *vips.ImageRef
-	ImgType int
+	img    *vips.ImageRef
+	Format ImgType
+	Data   []byte // 图片的byte流数据
 }
 
 var (
@@ -36,11 +40,44 @@ func init() {
 	intMinusOne.Set(-1)
 }
 
-// ShowDown 关闭libvips
-func ShowDown() {
+// ShutDown 关闭libvips，调用govips的Shutdown方法，不清楚具体作用
+func ShutDown() {
 	vips.Shutdown()
 }
 
+// LoadImgFromBufferOnePage 从比特流读取图片，只读取第一帧
+func LoadImgFromBufferOnePage(buffer []byte) (*Encoder, error) {
+	var intNumPages vips.IntParameter
+	intNumPages.Set(1)
+	encode := new(Encoder)
+	img, err := vips.LoadImageFromBuffer(buffer, &vips.ImportParams{
+		FailOnError: boolFalse,
+		NumPages:    intNumPages,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	switch img.Format() {
+	case vips.ImageTypeWEBP:
+		encode.Format = ImgTypeWEBP
+	case vips.ImageTypeGIF:
+		encode.Format = ImgTypeGIF
+	case vips.ImageTypeJPEG:
+		encode.Format = ImgTypeJPEG
+	case vips.ImageTypePNG:
+		encode.Format = ImgTypePng
+	default:
+		return nil, ErrorSupportImage
+	}
+
+	encode.img = img
+	encode.Data = buffer
+
+	return encode, nil
+}
+
+// LoadImgFromBuffer 从比特流读取图片
 func LoadImgFromBuffer(buffer []byte) (*Encoder, error) {
 	encode := new(Encoder)
 	img, err := vips.LoadImageFromBuffer(buffer, &vips.ImportParams{
@@ -53,30 +90,44 @@ func LoadImgFromBuffer(buffer []byte) (*Encoder, error) {
 	}
 	switch img.Format() {
 	case vips.ImageTypeWEBP:
-		encode.ImgType = ImgTypeWEBP
+		encode.Format = ImgTypeWEBP
 	case vips.ImageTypeGIF:
-		encode.ImgType = ImgTypeGIF
+		encode.Format = ImgTypeGIF
 	case vips.ImageTypeJPEG:
-		encode.ImgType = ImgTypeJPEG
+		encode.Format = ImgTypeJPEG
 	case vips.ImageTypePNG:
-		encode.ImgType = ImgTypePng
+		encode.Format = ImgTypePng
 	default:
 		return nil, ErrorSupportImage
 	}
 
 	encode.img = img
+	encode.Data = buffer
 
 	return encode, nil
 }
 
-// ToPng 转为png格式并压缩
-func (that Encoder) ToPng() ([]byte, error) {
+// ToPng 转为png格式
+// 动图只会截取第一帧
+// 该方法不会改变引用对象
+func (that *Encoder) ToPng() ([]byte, error) {
 	var (
 		err       error
 		resultBuf []byte
 	)
 
-	resultBuf, _, err = that.img.ExportPng(&vips.PngExportParams{
+	img := that.img
+
+	if img.Pages() > 1 {
+		newThat, err := LoadImgFromBufferOnePage(that.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		img = newThat.img
+	}
+
+	resultBuf, _, err = img.ExportPng(&vips.PngExportParams{
 		// StripMetadata: false,
 		Compression: 9, // 压缩等级 0 - 9
 		Filter:      vips.PngFilterNone,
@@ -95,14 +146,27 @@ func (that Encoder) ToPng() ([]byte, error) {
 	return resultBuf, nil
 }
 
-// ToJpeg 转为jpeg格式并压缩
-func (that Encoder) ToJpeg() ([]byte, error) {
+// ToJpeg 转为jpeg格式
+// 动图只会截取第一帧
+// 该方法不会改变引用对象
+func (that *Encoder) ToJpeg() ([]byte, error) {
 	var (
 		err       error
 		resultBuf []byte
 	)
 
-	resultBuf, _, err = that.img.ExportJpeg(&vips.JpegExportParams{
+	img := that.img
+
+	if img.Pages() > 1 {
+		newThat, err := LoadImgFromBufferOnePage(that.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		img = newThat.img
+	}
+
+	resultBuf, _, err = img.ExportJpeg(&vips.JpegExportParams{
 		// https://www.libvips.org/API/current/VipsForeignSave.html#vips-jpegsave
 		StripMetadata:  true, // 从图像中删除所有元数据
 		Quality:        75,
@@ -122,8 +186,9 @@ func (that Encoder) ToJpeg() ([]byte, error) {
 	return resultBuf, nil
 }
 
-// ToGif 转为Gif并压缩
-func (that Encoder) ToGif() ([]byte, error) {
+// ToGif 转为Gif
+// 该方法不会改变引用对象
+func (that *Encoder) ToGif() ([]byte, error) {
 	var (
 		err       error
 		resultBuf []byte
@@ -144,8 +209,9 @@ func (that Encoder) ToGif() ([]byte, error) {
 	return resultBuf, nil
 }
 
-// ToWebp 转为webp格式并压缩
-func (that Encoder) ToWebp() ([]byte, error) {
+// ToWebp 转为webp格式
+// 该方法不会改变引用对象
+func (that *Encoder) ToWebp() ([]byte, error) {
 	var (
 		err       error
 		resultBuf []byte
@@ -165,9 +231,10 @@ func (that Encoder) ToWebp() ([]byte, error) {
 	return resultBuf, nil
 }
 
-// Compress 压缩图片尽可能保证质量
-func (that Encoder) Compress() ([]byte, error) {
-	switch that.ImgType {
+// LossLess 压缩图片尽可能保证质量
+// 该方法不会改变引用对象
+func (that *Encoder) LossLess() ([]byte, error) {
+	switch that.Format {
 	case ImgTypeJPEG:
 		return that.ToJpeg()
 	case ImgTypePng:
@@ -177,13 +244,18 @@ func (that Encoder) Compress() ([]byte, error) {
 	case ImgTypeWEBP:
 		return that.ToWebp()
 	default:
-		return nil, errors.New("不支持的图片格式")
+		return nil, ErrorSupportImage
 	}
 }
 
-// Tiny 压缩并限制长宽，默认质量为35，你也可以自行设置
-func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error) {
-	q := 35
+// Compress 压缩并限制长宽，默认质量为65，你也可以自行设置
+// 该方法不会改变引用对象
+func (that *Encoder) Compress(maxW, maxH int, quality ...int) (buf []byte, err error) {
+	q := 65
+	img, err := that.img.Copy()
+	if err != nil {
+		return nil, err
+	}
 	if len(quality) > 0 {
 		q = quality[0]
 		if q <= 0 {
@@ -194,13 +266,13 @@ func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error)
 			q = 100
 		}
 	}
-	err = thumbNail(that.img, maxW, maxH)
+	_, err = thumbNail(img, maxW, maxH)
 	if err != nil {
 		return nil, err
 	}
-	switch that.ImgType {
+	switch that.Format {
 	case ImgTypeJPEG:
-		buf, _, err = that.img.ExportJpeg(&vips.JpegExportParams{
+		buf, _, err = img.ExportJpeg(&vips.JpegExportParams{
 			StripMetadata:  true,
 			Quality:        q,
 			Interlace:      true,
@@ -212,7 +284,7 @@ func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error)
 			QuantTable:         3,
 		})
 	case ImgTypePng:
-		buf, _, err = that.img.ExportPng(&vips.PngExportParams{
+		buf, _, err = img.ExportPng(&vips.PngExportParams{
 			StripMetadata: true,
 			Compression:   9, // 压缩等级 0 - 9
 			Filter:        vips.PngFilterNone,
@@ -224,7 +296,7 @@ func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error)
 			// Profile:       "",
 		})
 	case ImgTypeGIF:
-		buf, _, err = that.img.ExportGIF(&vips.GifExportParams{
+		buf, _, err = img.ExportGIF(&vips.GifExportParams{
 			StripMetadata: true,
 			Quality:       q,
 			// Dither:        0,
@@ -233,12 +305,12 @@ func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error)
 		})
 	case ImgTypeWEBP:
 		if q == 100 {
-			buf, _, err = that.img.ExportWebp(&vips.WebpExportParams{
+			buf, _, err = img.ExportWebp(&vips.WebpExportParams{
 				Lossless:      true,
 				StripMetadata: true,
 			})
 		} else {
-			buf, _, err = that.img.ExportWebp(&vips.WebpExportParams{
+			buf, _, err = img.ExportWebp(&vips.WebpExportParams{
 				Quality:         q,
 				Lossless:        false,
 				StripMetadata:   true,
@@ -251,4 +323,87 @@ func (that Encoder) Tiny(maxW, maxH int, quality ...int) (buf []byte, err error)
 	}
 
 	return
+}
+
+// Tiny 压缩图片为万能的webp格式，尽可能的减小体积
+// 该方法不会改变引用对象
+func (that *Encoder) Tiny(maxW, maxH int) (buf []byte, err error) {
+	img, err := that.img.Copy()
+	if err != nil {
+		return nil, err
+	}
+	_, err = thumbNail(img, maxW, maxH)
+
+	if err != nil {
+		return
+	}
+
+	buf, _, err = img.ExportWebp(&vips.WebpExportParams{
+		Quality:         35,
+		Lossless:        false,
+		StripMetadata:   true,
+		ReductionEffort: 4,
+	})
+
+	return
+}
+
+// ResizeSelf 对图片进行缩放
+// 注意：该方法会改变引用对象
+func (that *Encoder) ResizeSelf(width int, height ...int) error {
+	buf, err := resizeImg(that.img, width, height...)
+	if err != nil {
+		return err
+	}
+
+	that.Data = buf
+	return nil
+}
+
+// Resize 对图片进行缩放
+// 该方法不会改变引用对象
+func (that *Encoder) Resize(width int, height ...int) ([]byte, error) {
+	var (
+		buf []byte
+		err error
+	)
+
+	img, err := that.img.Copy()
+
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err = resizeImg(img, width, height...)
+
+	return buf, err
+}
+
+// Height 返回图片的高度，如果是动图，那么返回的是每一帧的高度
+func (that *Encoder) Height() int {
+	return that.img.PageHeight()
+}
+
+// Width 返回图片的宽度
+func (that *Encoder) Width() int {
+	return that.img.Width()
+}
+
+// Pages 返回图片的帧数，非动图返回1
+func (that *Encoder) Pages() int {
+	return that.img.Pages()
+}
+
+// Suffix 根据图片格式返回后缀名
+// eg ImgTypeWEBP 会返回 webp
+// 注意是不带 . 的
+func (that *Encoder) Suffix() string {
+	suffixMap := map[ImgType]string{
+		ImgTypeWEBP: "webp",
+		ImgTypeGIF:  "gif",
+		ImgTypeJPEG: "jpg",
+		ImgTypePng:  "png",
+	}
+
+	return suffixMap[that.Format]
 }
