@@ -2,3 +2,5 @@
 data/pic
 data/config.ini
 tmp
+test
+*_test.go
