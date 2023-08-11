@@ -4,6 +4,7 @@ package goimgp
 import (
 	"errors"
 	"github.com/davidbyttow/govips/v2/vips"
+	"log"
 	"runtime"
 )
 
@@ -31,11 +32,34 @@ var (
 	ErrorSupportImage = errors.New("不支持的图片格式")
 )
 
+// custom logger. Only log error, critical, and warning
+func myLogger(messageDomain string, verbosity vips.LogLevel, message string) {
+	var messageLevelDescription string
+	switch verbosity {
+	case vips.LogLevelError:
+		messageLevelDescription = "error"
+	case vips.LogLevelCritical:
+		messageLevelDescription = "critical"
+	case vips.LogLevelWarning:
+		messageLevelDescription = "warning"
+	//case vips.LogLevelMessage:
+	//	messageLevelDescription = "message"
+	//case vips.LogLevelInfo:
+	//	messageLevelDescription = "info"
+	//case vips.LogLevelDebug:
+	//	messageLevelDescription = "debug"
+	default:
+		return
+	}
+
+	log.Printf("[%v.%v] %v", messageDomain, messageLevelDescription, message)
+}
+
 func init() {
+	vips.LoggingSettings(myLogger, vips.LogLevelInfo)
 	vips.Startup(&vips.Config{
 		ConcurrencyLevel: runtime.NumCPU(),
 	})
-
 	boolFalse.Set(false)
 	intMinusOne.Set(-1)
 }
