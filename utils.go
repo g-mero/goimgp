@@ -5,6 +5,21 @@ import (
 	"github.com/davidbyttow/govips/v2/vips"
 )
 
+// get first element from quality slice and correct its value
+func qualityFirst(slice []int, defaultQuality int) int {
+	q := defaultQuality
+	if len(slice) > 0 {
+		q = slice[0]
+	}
+	if q <= 0 {
+		q = 35
+	} else if q > 99 {
+		q = 100
+	}
+
+	return q
+}
+
 // 图片大小缩小
 func thumbNail(img *vips.ImageRef, desW, desH int) (buf []byte, err error) {
 	var (

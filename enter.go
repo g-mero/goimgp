@@ -173,7 +173,7 @@ func (that *Encoder) ToPng() ([]byte, error) {
 // ToJpeg 转为jpeg格式
 // 动图只会截取第一帧
 // 该方法不会改变引用对象
-func (that *Encoder) ToJpeg() ([]byte, error) {
+func (that *Encoder) ToJpeg(q ...int) ([]byte, error) {
 	var (
 		err       error
 		resultBuf []byte
@@ -193,7 +193,7 @@ func (that *Encoder) ToJpeg() ([]byte, error) {
 	resultBuf, _, err = img.ExportJpeg(&vips.JpegExportParams{
 		// https://www.libvips.org/API/current/VipsForeignSave.html#vips-jpegsave
 		StripMetadata:  true, // 从图像中删除所有元数据
-		Quality:        75,
+		Quality:        qualityFirst(q, 75),
 		Interlace:      true, // 交错（渐进式）, 浏览器体验好，体积也会变小
 		OptimizeCoding: true, // 优化编码，会减小一点体积
 		// SubsampleMode:      vips.VipsForeignSubsampleOn, // 色度子采样模式
@@ -235,14 +235,14 @@ func (that *Encoder) ToGif() ([]byte, error) {
 
 // ToWebp 转为webp格式
 // 该方法不会改变引用对象
-func (that *Encoder) ToWebp() ([]byte, error) {
+func (that *Encoder) ToWebp(q ...int) ([]byte, error) {
 	var (
 		err       error
 		resultBuf []byte
 	)
 
 	resultBuf, _, err = that.img.ExportWebp(&vips.WebpExportParams{
-		Quality:         75,
+		Quality:         qualityFirst(q, 75),
 		Lossless:        false,
 		StripMetadata:   true,
 		ReductionEffort: 4,
@@ -275,20 +275,10 @@ func (that *Encoder) LossLess() ([]byte, error) {
 // Compress 压缩并限制长宽，默认质量为65，你也可以自行设置
 // 该方法不会改变引用对象
 func (that *Encoder) Compress(maxW, maxH int, quality ...int) (buf []byte, err error) {
-	q := 65
+	q := qualityFirst(quality, 65)
 	img, err := that.img.Copy()
 	if err != nil {
 		return nil, err
-	}
-	if len(quality) > 0 {
-		q = quality[0]
-		if q <= 0 {
-			q = 35
-		}
-
-		if q > 99 {
-			q = 100
-		}
 	}
 	_, err = thumbNail(img, maxW, maxH)
 	if err != nil {
